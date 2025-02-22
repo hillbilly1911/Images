@@ -1,26 +1,3 @@
-/*
- * MIT License
- *
- * Copyright (c) 2020 Mark
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
 package com.andavin.images.v1_21_R3;
 
 import com.andavin.images.image.CustomImageSection;
@@ -93,39 +70,43 @@ class PacketListener extends com.andavin.images.PacketListener<ServerboundIntera
     }
 
     @Override
-    protected void handle(Player player, ServerboundPickItemFromEntityPacket packet) {
+    protected void handle(Player player, Object packet) {
+        if (packet instanceof ServerboundPickItemFromEntityPacket) {
+            ServerboundPickItemFromEntityPacket pickItemPacket = (ServerboundPickItemFromEntityPacket) packet;
+            CustomImageSection section = getImageSectionByEntityId(pickItemPacket.id());
+            if (section == null) {
+                return;
+            }
 
-        CustomImageSection section = getImageSectionByEntityId(packet.id());
-        if (section == null) {
-            return;
+            MapId mapId = new MapId(section.getMapId());
+            ItemStack item = new ItemStack(Items.FILLED_MAP);
+            item.set(DataComponents.MAP_ID, mapId);
+            
+            Scheduler.sync(() -> {
+                ServerLevel world = ((CraftPlayer) player).getHandle().serverLevel();
+                MapItemSavedData map = MapItem.getSavedData(mapId, world);
+                if (map == null) {
+                    ItemStack newItem = MapItem.create(world, 0, 0, (byte) 3, false, false);
+                    MapId newMapId = newItem.get(DataComponents.MAP_ID);
+                    item.set(DataComponents.MAP_ID, newMapId);
+                    map = MapItem.getSavedData(newMapId, world);
+                }
+
+                if (map != null) {
+                    map.locked = true;
+                    map.scale = 3;
+                    map.trackingPosition = false;
+                    map.unlimitedTracking = true;
+                    map.colors = section.getPixels();
+                } else {
+                    player.sendMessage("§cCannot create map. Unknown map data...");
+                }
+
+                ServerGamePacketListenerImpl conn = ((CraftPlayer) player).getHandle().connection;
+                ((PlayerConnectionProxy) conn).tryPickItem(item);
+            });
+        } else {
+            System.out.println("[Images] Ignoring unexpected packet type: " + packet.getClass().getName());
         }
-
-        MapId mapId = new MapId(section.getMapId());
-        ItemStack item = new ItemStack(Items.FILLED_MAP);
-        item.set(DataComponents.MAP_ID, mapId);
-        Scheduler.sync(() -> {
-
-            ServerLevel world = ((CraftPlayer) player).getHandle().serverLevel();
-            MapItemSavedData map = MapItem.getSavedData(mapId, world);
-            if (map == null) {
-                ItemStack newItem = MapItem.create(world, 0, 0, (byte) 3, false, false);
-                MapId newMapId = newItem.get(DataComponents.MAP_ID);
-                item.set(DataComponents.MAP_ID, newMapId); // Transfer the ID
-                map = MapItem.getSavedData(newMapId, world);
-            }
-
-            if (map != null) {
-                map.locked = true;
-                map.scale = 3;
-                map.trackingPosition = false;
-                map.unlimitedTracking = true;
-                map.colors = section.getPixels();
-            } else {
-                player.sendMessage("§cCannot create map. Unknown map data...");
-            }
-
-            ServerGamePacketListenerImpl conn = ((CraftPlayer) player).getHandle().connection;
-            ((PlayerConnectionProxy) conn).tryPickItem(item);
-        });
     }
 }
